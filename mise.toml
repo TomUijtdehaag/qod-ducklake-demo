@@ -1,0 +1,35 @@
+[tools]
+uv = "latest"
+
+[tasks.up]
+description = "Start Keycloak, Quack on Demand, Postgres and SeaweedFS"
+run = ["uv sync", "docker compose up -d --wait"]
+
+[tasks.seed]
+description = "Create the demo tables as carol (engineers) through QoD"
+# QoD reports healthy before its pool serves queries; retry until it does (the seed is idempotent).
+run = """
+for i in $(seq 30); do
+  uvx --from duckdb-cli==2.0.0 duckdb -no-agent -bail \
+    -cmd "ATTACH 'quack:localhost:9494' AS qod (TYPE quack, TOKEN 'tenant=demo&pool=bi&user=carol&password=carol')" \
+    -f qod/seed.sql > /dev/null && echo "seeded" && exit 0
+  sleep 2
+done
+exit 1
+"""
+
+[tasks.duckdb]
+description = "DuckDB 2.0 CLI, e.g. `mise run duckdb` then ATTACH as any user"
+run = "uvx --from duckdb-cli==2.0.0 duckdb"
+
+[tasks.notebook]
+description = "Open the governance demo notebook"
+run = "uv run marimo edit notebooks/demo.py"
+
+[tasks.down]
+description = "Stop the stack (keeps data)"
+run = "docker compose down"
+
+[tasks.demo]
+description = "Wipe everything, start, seed and open the notebook"
+run = ["docker compose down -v", "mise run up", "mise run seed", "mise run notebook"]

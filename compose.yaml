@@ -1,0 +1,79 @@
+# PROTOTYPE: Quack on Demand as the governed front door to a DuckLake on S3, with Keycloak as the IdP.
+name: quack
+
+services:
+  postgres:
+    image: postgres:17.6
+    environment: { POSTGRES_USER: postgres, POSTGRES_PASSWORD: postgres, POSTGRES_DB: qod }
+    volumes: [pg-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d qod"]
+      interval: 2s
+      retries: 30
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.53
+    # `weed mini` creates the bucket and takes its admin credentials from AWS_* env vars.
+    environment: { AWS_ACCESS_KEY_ID: quack, AWS_SECRET_ACCESS_KEY: quack12345, S3_BUCKET: lake }
+    command: ["mini", "-dir=/data"]
+    volumes: [seaweedfs-data:/data]
+    healthcheck:
+      test: ["CMD-SHELL", "echo s3.bucket.list | weed shell 2>/dev/null | grep -qw lake"]
+      interval: 2s
+      retries: 60
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    command:
+      - start-dev
+      - --import-realm
+      - --health-enabled=true
+      # One issuer for tokens minted from the host and from containers.
+      - --hostname=http://localhost:8080
+      - --hostname-backchannel-dynamic=true
+    environment: { KC_BOOTSTRAP_ADMIN_USERNAME: admin, KC_BOOTSTRAP_ADMIN_PASSWORD: admin }
+    ports: ["8080:8080"]
+    volumes: [./keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro]
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 3s
+      retries: 60
+
+  qod:
+    image: starlakeai/quack-on-demand:0.14.0
+    depends_on:
+      postgres: { condition: service_healthy }
+      seaweedfs: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
+    environment:
+      QOD_PG_HOST: postgres
+      QOD_PG_USER: postgres
+      QOD_PG_PASSWORD: postgres
+      QOD_PG_DBNAME: qod
+      QOD_ADMIN_USERNAME: admin
+      QOD_ADMIN_PASSWORD: admin
+      # Data Files in S3 (SeaweedFS locally).
+      QOD_DUCKLAKE_DATA_PATH: s3://lake/ducklake
+      QOD_S3_ENDPOINT: seaweedfs:8333
+      QOD_S3_ACCESS_KEY_ID: quack
+      QOD_S3_SECRET_ACCESS_KEY: quack12345
+      QOD_S3_URL_STYLE: path
+      QOD_S3_USE_SSL: "false"
+      # Users sign in through the IdP (password grant or bearer token); in AWS swap for QOD_AUTH_AZURE_* / QOD_AUTH_AWS_*.
+      QOD_AUTH_KEYCLOAK_ENABLED: "true"
+      QOD_AUTH_KEYCLOAK_BASE_URL: http://keycloak:8080
+      QOD_AUTH_KEYCLOAK_REALM: quack
+      QOD_AUTH_KEYCLOAK_CLIENT_ID: qod
+      QOD_AUTH_KEYCLOAK_CLIENT_SECRET: qod-secret
+      QOD_AUTH_KEYCLOAK_ISSUER: http://localhost:8080/realms/quack
+      QOD_BOOTSTRAP_YAML: /governance.yaml
+    ports:
+      - "20900:20900"   # admin UI + REST
+      - "31338:31338"   # Arrow Flight SQL (BI tools)
+      - "9494:9494"     # native Quack (DuckDB ATTACH)
+    volumes:
+      - ./qod/governance.yaml:/governance.yaml:ro
+
+volumes:
+  pg-data:
+  seaweedfs-data:

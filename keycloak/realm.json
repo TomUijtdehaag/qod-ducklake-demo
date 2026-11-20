@@ -1,0 +1,50 @@
+{
+  "realm": "quack",
+  "enabled": true,
+  "sslRequired": "none",
+  "accessTokenLifespan": 900,
+  "groups": [
+    {"name": "analysts"},
+    {"name": "partners"},
+    {"name": "engineers"}
+  ],
+  "clientScopes": [
+    {
+      "name": "qod",
+      "description": "Identity for Quack on Demand: audience, username, groups",
+      "protocol": "openid-connect",
+      "attributes": {"include.in.token.scope": "false"},
+      "protocolMappers": [
+        {"name": "sub", "protocol": "openid-connect", "protocolMapper": "oidc-sub-mapper",
+         "config": {"access.token.claim": "true"}},
+        {"name": "audience", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+         "config": {"included.custom.audience": "qod", "access.token.claim": "true"}},
+        {"name": "username", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-property-mapper",
+         "config": {"user.attribute": "username", "claim.name": "preferred_username", "jsonType.label": "String", "access.token.claim": "true"}},
+        {"name": "groups", "protocol": "openid-connect", "protocolMapper": "oidc-group-membership-mapper",
+         "config": {"claim.name": "groups", "full.path": "false", "access.token.claim": "true"}}
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "qod",
+      "name": "Quack on Demand",
+      "publicClient": false,
+      "secret": "qod-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "defaultClientScopes": ["qod"]
+    }
+  ],
+  "users": [
+    {"username": "alice", "enabled": true, "email": "alice@example.com", "emailVerified": true, "firstName": "Alice", "lastName": "Analyst",
+     "credentials": [{"type": "password", "value": "alice"}], "groups": ["analysts"]},
+    {"username": "bob", "enabled": true, "email": "bob@example.com", "emailVerified": true, "firstName": "Bob", "lastName": "Partner",
+     "credentials": [{"type": "password", "value": "bob"}], "groups": ["partners"]},
+    {"username": "carol", "enabled": true, "email": "carol@example.com", "emailVerified": true, "firstName": "Carol", "lastName": "Engineer",
+     "credentials": [{"type": "password", "value": "carol"}], "groups": ["engineers"]},
+    {"username": "mallory", "enabled": true, "email": "mallory@example.com", "emailVerified": true, "firstName": "Mallory", "lastName": "Outsider",
+     "credentials": [{"type": "password", "value": "mallory"}], "groups": []}
+  ]
+}
